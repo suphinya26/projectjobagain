@@ -1,0 +1,346 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ENUM
+enum UserType {
+  buyer
+  farmer
+  admin
+}
+
+enum VerificationStatus {
+  pending
+  verified
+  rejected
+}
+
+enum ProductStatus {
+  available //ซื้อขายปกติ
+  auction //ประมูล
+  sold_out //หมดแล้ว
+}
+
+enum OrderStatus {
+  pending // ยังไม่ชำระ
+  paid // ชำระแล้ว
+  shipped // จัดส่งแล้ว
+  completed // ส่งสำเร็จ
+  cancelled // ยกเลิก
+}
+
+enum PaymentStatus {
+  pending //ยังไม่จ่าย
+  pending_review //รอตรวจสอบ
+  completed //จ่ายแล้ว
+  failed //ไม่สำเร็จ
+  refunded // คืนเงิน
+}
+
+enum AuctionStatus {
+  active
+  ended
+  canceled
+}
+
+enum DeliveryMethod {
+  delivery
+  pickup
+}
+
+enum PaymentMethod {
+  transfer
+  cod
+}
+
+// MODELS
+
+model User {
+  id                 Int               @id @default(autoincrement())
+  username           String            @unique
+  email              String            @unique
+  password           String
+  fullname           String
+  userType           UserType
+  profileImg         String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  phone              String?
+  latitude           Float?
+  longitude          Float?
+  address            String?
+  farmer             Farmer?
+  orders             Order[]
+  cartItems          Cart[]
+  notifications      Notification[]
+  chatUser1          Chat[]            @relation("ChatUser1")
+  chatUser2          Chat[]            @relation("ChatUser2")
+  chatMessages       ChatMessage[]
+  reviews            Review[]
+  bids               Bid[]
+  highestBidAuctions Auction[]         @relation("HighestBidder")
+  wonAuctions        Auction[]         @relation("AuctionWinner")
+  shippingAddresses  ShippingAddress[]
+}
+
+model Farmer {
+  id                  Int                @id @default(autoincrement())
+  user_id             Int                @unique
+  farm_logo_img       String?
+  farm_name           String
+  farm_description    String?
+  farm_address        String?
+  farm_img            String?
+  farm_location_lat   Decimal?           @db.Decimal(10, 8)
+  farm_location_long  Decimal?           @db.Decimal(11, 8)
+  contact_person      String?
+  id_card_number      String?            @unique
+  id_card_img         String?
+  farmer_cert_img     String?
+  bank_name           String?
+  bank_account_num    String?
+  bank_account_name   String?
+  bank_account_img    String?
+  verification_status VerificationStatus
+  verified_at         DateTime?
+
+  user            User             @relation(fields: [user_id], references: [id])
+  Products        Product[]
+  Reviews         Review[]
+  Seller_Payouts  SellerPayout[]
+  Auction         Auction[]
+  TransactionLogs TransactionLog[]
+}
+
+model Product {
+  id              Int             @id @default(autoincrement())
+  farmerId        Int
+  name            String
+  description     String?
+  categoryId      Int
+  status          ProductStatus
+  price           Float
+  unit            String
+  stockQuantity   Int
+  farmer          Farmer          @relation(fields: [farmerId], references: [id])
+  category        Category        @relation(fields: [categoryId], references: [id])
+  reviews         Review[]
+  orderItems      OrderItem[]
+  cartItems       CartItem[]
+  auctions        Auction[]
+  ProductImages   ProductImages[]
+}
+
+model ProductImages {
+  image_id     Int     @id @default(autoincrement())
+  product_id   Int
+  image_url    String
+  is_thumbnail Boolean @default(false)
+
+  product Product @relation(fields: [product_id], references: [id])
+}
+
+model Category {
+  id       Int       @id @default(autoincrement())
+  name     String
+  products Product[]
+}
+
+model Order {
+  id                Int              @id @default(autoincrement())
+  userId            Int
+  totalPrice        Float
+  isAuctionOrder    Boolean          @default(false)
+  status            OrderStatus
+  deliveryMethod    DeliveryMethod?
+  paymentMethod     PaymentMethod?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  user              User             @relation(fields: [userId], references: [id])
+  orderItems        OrderItem[]
+  payment           Payment?
+  shippingAddressId Int?
+  shippingAddress   ShippingAddress? @relation(fields: [shippingAddressId], references: [address_id])
+  transactionLog    TransactionLog?
+}
+
+model OrderItem {
+  id        Int     @id @default(autoincrement())
+  orderId   Int
+  productId Int
+  quantity  Int
+  price     Float
+  order     Order   @relation(fields: [orderId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model Payment {
+  id            Int           @id @default(autoincrement())
+  orderId       Int           @unique
+  amount        Float // เพิ่ม amount เพื่อเก็บยอดเงินที่ชำระ
+  paymentStatus PaymentStatus @default(pending) // ใช้ enum สำหรับสถานะ
+  paymentRef    String? // สำหรับเลข Ref จากธนาคาร/Webhook
+  payment_slip  String? // เพิ่มสำหรับเก็บชื่อไฟล์สลิป (ถ้ามี)
+  paidAt        DateTime?
+  imageUrl      String?       @map("image_url")
+  createdAt     DateTime      @default(now()) // เพิ่ม createdAt
+  updatedAt     DateTime      @updatedAt // เพิ่ม updatedAt
+
+  order Order @relation(fields: [orderId], references: [id])
+}
+
+model ShippingAddress {
+  address_id     Int     @id @default(autoincrement())
+  user_id        Int
+  recipient_name String?
+  phone_number   String?
+  address_line1  String?
+  address_line2  String?
+  district       String?
+  province       String?
+  zip_code       String?
+  is_default     Boolean @default(false)
+
+  orders Order[]
+  user   User    @relation(fields: [user_id], references: [id])
+}
+
+model Cart {
+  id        Int        @id @default(autoincrement())
+  userId    Int        @unique // Each user has one unique cart
+  user      User       @relation(fields: [userId], references: [id])
+  cartItems CartItem[] // A cart can have many cart items
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt // Add updatedAt for tracking changes
+}
+
+model CartItem {
+  id        Int      @id @default(autoincrement())
+  cartId    Int
+  productId Int
+  quantity  Int
+  createdAt DateTime @default(now())
+
+  cart    Cart    @relation(fields: [cartId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([cartId, productId])
+}
+
+model Review {
+  id        Int      @id @default(autoincrement())
+  productId Int?
+  farmerId  Int?
+  userId    Int
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+  product   Product? @relation(fields: [productId], references: [id])
+  farmer    Farmer?  @relation(fields: [farmerId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Auction {
+  id                  Int           @id @default(autoincrement())
+  product_id          Int
+  farmerId            Int
+  describe_condition  String?       @db.VarChar(255)
+  auction_start_time  DateTime
+  auction_end_time    DateTime
+  start_bid_price     Decimal       @db.Decimal(10, 2)
+  current_highest_bid Decimal       @default(0.00) @db.Decimal(10, 2)
+  highest_bidder_id   Int?
+  auction_status      AuctionStatus @default(active)
+  auction_winner_id   Int?
+  winning_bid_price   Decimal?      @db.Decimal(10, 2)
+  is_checked_out      Boolean       @default(false)
+  product             Product       @relation(fields: [product_id], references: [id])
+  farmer              Farmer        @relation(fields: [farmerId], references: [id])
+  highest_bidder      User?         @relation("HighestBidder", fields: [highest_bidder_id], references: [id])
+  auction_winner      User?         @relation("AuctionWinner", fields: [auction_winner_id], references: [id])
+  bids                Bid[]
+}
+
+model Bid {
+  id         Int      @id @default(autoincrement())
+  auction_id Int
+  user_id    Int
+  bid_amount Decimal  @db.Decimal(10, 2)
+  bid_time   DateTime @default(now())
+  productId  Int?
+
+  auction Auction @relation(fields: [auction_id], references: [id])
+  user    User    @relation(fields: [user_id], references: [id])
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model SellerPayout {
+  id             Int      @id @default(autoincrement())
+  farmerId       Int
+  amount         Float
+  payoutDate     DateTime
+  transactionRef String
+  farmer         Farmer   @relation(fields: [farmerId], references: [id])
+}
+
+model Chat {
+  id        Int      @id @default(autoincrement())
+  user1Id   Int
+  user2Id   Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user1LastReadId Int?
+  user2LastReadId Int?
+
+  user1LastRead ChatMessage? @relation("User1LastRead", fields: [user1LastReadId], references: [id])
+  user2LastRead ChatMessage? @relation("User2LastRead", fields: [user2LastReadId], references: [id])
+
+  user1 User @relation("ChatUser1", fields: [user1Id], references: [id])
+  user2 User @relation("ChatUser2", fields: [user2Id], references: [id])
+
+  messages ChatMessage[]
+
+  @@unique([user1Id, user2Id])
+  @@map("unique_chat_pair")
+}
+
+model ChatMessage {
+  id       Int      @id @default(autoincrement())
+  chatId   Int
+  senderId Int
+  content  String
+  sentAt   DateTime @default(now())
+
+  chat   Chat @relation(fields: [chatId], references: [id])
+  sender User @relation(fields: [senderId], references: [id])
+
+  user1LastReadOf Chat[] @relation("User1LastRead")
+  user2LastReadOf Chat[] @relation("User2LastRead")
+}
+
+model TransactionLog {
+  id              Int      @id @default(autoincrement())
+  orderId         Int      @unique
+  farmerId        Int
+  amount          Float
+  fee             Float
+  netAmount       Float
+  transactionDate DateTime @default(now())
+
+  order  Order  @relation(fields: [orderId], references: [id])
+  farmer Farmer @relation(fields: [farmerId], references: [id])
+}
